@@ -1,4 +1,3 @@
-# -*- coding:utf-8 -*-
 import json
 import os
 from tkinter import *
@@ -25,6 +24,14 @@ global tunnel_name
 tunnel_name = None
 global treeview
 treeview = None
+global tunnel_row_id
+tunnel_row_id = None
+global boolvar
+boolvar = None
+global password_entry
+password_entry = None
+global showpwd
+showpwd = None
 
 tunnel_infos = {}
 
@@ -42,8 +49,29 @@ class tunnel_info_class:
     tunnel_name = ""
 
 
+def clear():
+    localhost_port.set('port')
+    ssh_ip.set('ssh ip')
+    ssh_port.set('ssh port')
+    ssh_username.set('ssh username')
+    ssh_password.set('ssh password')
+    ##目的地的ip端口
+    remote_ip.set('remote ip')
+    remote_port.set('remote port')
+    tunnel_name.set('tunnel_name')
+    tunnel_row_id.set('')
+
+
 def save_config():
     tunnel_info = tunnel_info_class()
+    tunnel_row_id_value = tunnel_row_id.get()
+    if tunnel_row_id_value != "" and tunnel_row_id_value != None:
+        if tunnel_row_id_value in tunnel_infos.keys():
+            tunnel_info = tunnel_infos[tunnel_row_id_value]
+        if tunnel_row_id_value in tunnel_infos_start.keys():
+            messagebox.showinfo(title='修改提醒', message='服务已启动，无法修改')
+            return
+
     localhost_port_value = localhost_port.get()
     if localhost_port_value != "" and localhost_port_value != "port":
         tunnel_info.localhost_port = localhost_port_value
@@ -75,22 +103,29 @@ def save_config():
         messagebox.showinfo(title='输入提示', message='中转服务器账户不能为空')
         return
     remote_ip_value = remote_ip.get()
-    if remote_ip_value != "" and remote_ip_value != "port":
+    if remote_ip_value != "" and remote_ip_value != "remote ip":
         tunnel_info.remote_ip = remote_ip_value
     else:
         messagebox.showinfo(title='输入提示', message='目标服务器地址不能为空')
         return
     remote_port_value = remote_port.get()
-    if remote_port_value != "" and remote_port_value != "port":
+    if remote_port_value != "" and remote_port_value != "remote port":
         tunnel_info.remote_port = remote_port_value
     else:
         messagebox.showinfo(title='输入提示', message='目标端口不能为空')
         return
     tunnel_name_value = tunnel_name.get()
-    if tunnel_name_value != "":
+    if tunnel_name_value != "" and remote_port_value != "tunnel_name":
         tunnel_info.tunnel_name = tunnel_name_value
-    tree_id = insert_tree_view(tunnel_info, "未启动")
+    tree_id = ""
+    if tunnel_row_id_value != "" and tunnel_row_id_value != None:
+        if tunnel_row_id_value in tunnel_infos.keys():
+            tree_id = tunnel_row_id_value
+            update_tree_view(tunnel_row_id_value, tunnel_info, "未启动")
+    else:
+        tree_id = insert_tree_view(tunnel_info, "未启动")
     tunnel_infos.update({tree_id: tunnel_info})
+    tunnel_row_id.set(tree_id)
     write_json()
     ##保存到json文件中
 
@@ -129,17 +164,17 @@ def write_json():
 def start_tunnel():
     iid = treeview.selection()
     if len(iid) > 0:
-        if iid not in tunnel_infos_start.keys():
+        if iid[0] not in tunnel_infos_start.keys():
             tunnel_info = tunnel_infos[iid[0]]
-            tunnel = ssl_tunnel.operate_sshtunnel(tunnel_info)
-            if tunnel is not None:
-                try:
+            try:
+                tunnel = ssl_tunnel.operate_sshtunnel(tunnel_info)
+                if tunnel is not None:
                     tunnel.start()
                     tunnel_infos_start.update({iid[0]: tunnel})
                     update_tree_view(iid[0], tunnel_info, "启动")
                     pass
-                except Exception  as e:
-                    messagebox.showinfo(title='连接异常', message=e.args[0])
+            except Exception  as e:
+                messagebox.showinfo(title='连接异常', message=e.args[0])
     else:
         messagebox.showinfo(title='选择异常', message="未选择列表")
 
@@ -175,6 +210,23 @@ def remove_tunnel():
         messagebox.showinfo(title='选择异常', message="未选择列表")
 
 
+def on_click(event):
+    global localhost_port, ssh_ip, ssh_port, ssh_password, ssh_username, remote_ip, remote_port, tunnel_name, treeview, tunnel_row_id
+    iid = treeview.selection()
+    if len(iid) > 0:
+        if iid[0] in tunnel_infos.keys():
+            tunnel_info = tunnel_infos[iid[0]]
+            localhost_port.set(tunnel_info.localhost_port)
+            ssh_ip.set(tunnel_info.ssh_ip)
+            ssh_port.set(tunnel_info.ssh_port)
+            ssh_password.set(tunnel_info.ssh_password)
+            ssh_username.set(tunnel_info.ssh_username)
+            remote_ip.set(tunnel_info.remote_ip)
+            remote_port.set(tunnel_info.remote_port)
+            tunnel_name.set(tunnel_info.tunnel_name)
+            tunnel_row_id.set(iid[0])
+
+
 def update_tree_view(id, tunnel_info, state):
     treeview.item(id, values=(tunnel_info.tunnel_name, tunnel_info.localhost_port,
                               tunnel_info.ssh_username + "@" + tunnel_info.ssh_ip + ":" + tunnel_info.ssh_port,
@@ -191,8 +243,41 @@ def insert_tree_view(tunnel_info, state):
                                                               ))
 
 
+def start_all_tunnel():
+    for tunnel_id in tunnel_infos:
+        if tunnel_id in tunnel_infos_start.keys():
+            continue
+        tunnel_info = tunnel_infos[tunnel_id]
+        if tunnel_info is not None:
+            try:
+                tunnel = ssl_tunnel.operate_sshtunnel(tunnel_info)
+                if tunnel is not None:
+                    tunnel.start()
+                    tunnel_infos_start.update({tunnel_id: tunnel})
+                    update_tree_view(tunnel_id, tunnel_info, "启动")
+                    pass
+            except Exception as e:
+                messagebox.showinfo(title='连接异常', message=e.args[0])
+
+
+def stop_all_tunnel():
+    for tunnel_id in list(tunnel_infos_start.keys()):
+        tunnel = tunnel_infos_start[tunnel_id]
+        tunnel_info = tunnel_infos[tunnel_id]
+        if tunnel is not None:
+            try:
+                tunnel.stop()
+                tunnel_infos_start.pop(tunnel_id)
+                update_tree_view(tunnel_id, tunnel_info, "未启动")
+            except Exception  as e:
+                messagebox.showinfo(title='连接异常', message=e.args[0])
+
+
 def tk_desktop(tk_obj):
-    global localhost_port, ssh_ip, ssh_port, ssh_password, ssh_username, remote_ip, remote_port, tunnel_name, treeview
+    global localhost_port, ssh_ip, ssh_port, ssh_password, \
+        ssh_username, remote_ip, remote_port, tunnel_name\
+        , treeview, tunnel_row_id, boolvar, password_entry, \
+        showpwd
 
     # GUI
     tk_obj.title('SSHTunnel')
@@ -223,8 +308,15 @@ def tk_desktop(tk_obj):
     Entry(tk_obj, textvariable=ssh_username, width=20, font='宋体 12').place(x=20, y=170)
     ssh_username.set('ssh username')
     ssh_password = StringVar()
-    Entry(tk_obj, textvariable=ssh_password, width=20, show='*', font='宋体 12').place(x=20, y=200)
+    password_entry = Entry(tk_obj, textvariable=ssh_password, width=20, show='*', font='宋体 12')
+    password_entry.place(x=20, y=200)
     ssh_password.set('ssh password')
+
+    boolvar = BooleanVar()
+    boolvar.set(False)
+    showpwd = Checkbutton(tk_obj, text="显示密码", variable=boolvar, command=passWord)
+    showpwd.place(x=200, y=200)
+
     ##目的地的ip端口
     Label(tk_obj, text='目标服务器', font='宋体 15 bold', bg='white').place(x=20, y=230)
     ##ip 端口
@@ -238,9 +330,14 @@ def tk_desktop(tk_obj):
     Label(tk_obj, text='名称', font='宋体 15 bold', bg='white').place(x=20, y=330)
     tunnel_name = StringVar()
     Entry(tk_obj, textvariable=tunnel_name, width=20, font='宋体 12').place(x=20, y=360)
+    tunnel_name.set('tunnel_name')
 
     Button(tk_obj, text='保存', bd=3, width=10, command=save_config, bg='#1d953f').place(x=20, y=390)
+    Button(tk_obj, text='清空', bd=3, width=10, command=clear).place(x=100, y=390)
 
+    tunnel_row_id = StringVar()
+    tunnel_row_entry = Entry(tk_obj, textvariable=tunnel_row_id, width=20, font='宋体 12')
+    tunnel_row_entry.pack_forget()
     frame_right = LabelFrame(tk_obj, text="服务列表", labelanchor="n")
     frame_right.place(relx=0.3, rely=0.04, relwidth=0.65, relheight=0.85)
     columns = ("名称", "本地端口", "中转信息", "目标信息", "状态")
@@ -256,19 +353,31 @@ def tk_desktop(tk_obj):
     treeview.heading("目标信息", text="目标信息")
     treeview.heading("状态", text="状态")
     treeview.pack(side=LEFT, fill=BOTH)
+    treeview.bind("<<TreeviewSelect>>", on_click)
     fr1 = Frame(tk_obj)
-    fr1.place(relx=0.55, rely=0.9)
+    fr1.place(relx=0.45, rely=0.9)
     but1 = Button(fr1, text="启动", command=start_tunnel)
     but1.pack(side=LEFT, padx=(20, 0))
-    but1 = Button(fr1, text="停止", command=stop_tunnel)
-    but1.pack(side=LEFT, padx=(20, 0))
-    but1 = Button(fr1, text="删除", command=remove_tunnel)
-    but1.pack(side=LEFT, padx=(20, 0))
+    but4 = Button(fr1, text="全部启动", command=start_all_tunnel)
+    but4.pack(side=LEFT, padx=(20, 0))
+    but2 = Button(fr1, text="停止", command=stop_tunnel)
+    but2.pack(side=LEFT, padx=(20, 0))
+    but5 = Button(fr1, text="全部停止", command=stop_all_tunnel)
+    but5.pack(side=LEFT, padx=(20, 0))
+    but3 = Button(fr1, text="删除", command=remove_tunnel)
+    but3.pack(side=LEFT, padx=(20, 0))
     # 垂直滚动条
     scr1 = Scrollbar(frame_right)
     scr1.pack(fill=Y, side=RIGHT)
     treeview.config(yscrollcommand=scr1.set)
     scr1.config(command=treeview.yview)
+
+
+def passWord():
+    if boolvar.get():
+        password_entry.config(show="")
+    else:
+        password_entry.config(show="*")
 
 
 def load_config():
